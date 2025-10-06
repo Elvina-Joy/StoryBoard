@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -45,7 +46,7 @@
 
             <div class="max-w-4xl mx-auto">
                 <div class="bg-gray-800 p-6 rounded-2xl shadow-2xl space-y-6">
-                    <!-- NEW: Character and Style Inputs -->
+                    
                     <div>
                         <label for="character-input" class="block text-lg font-semibold text-gray-300 mb-2">1. The "Casting Call" (Define Your Character)</label>
                         <textarea id="character-input" rows="3" class="w-full bg-gray-900 text-gray-300 p-4 border border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition" placeholder="e.g., Elara, a woman in her late 20s with short, dark hair, wearing a rugged, patched-up grey spacesuit..."></textarea>
@@ -62,28 +63,33 @@
                     </div>
                     
                     <div>
-                         <label for="script-input" class="block text-lg font-semibold text-gray-300 mb-2">3. The Script</label>
-                        <textarea id="script-input" class="w-full h-52 bg-gray-900 text-gray-300 p-4 border border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition" placeholder="e.g., A lone astronaut stands on a red, dusty planet..."></textarea>
+                        <label for="script-input" class="block text-lg font-semibold text-gray-300 mb-2">3. The Script</label>
+                        <p class="text-sm text-gray-400 mb-2">Paste your entire script (dialogue, action, scenes) below. The AI will determine the scene breaks.</p>
+                        <textarea id="script-input" class="w-full h-52 bg-gray-900 text-gray-300 p-4 border border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition" placeholder="e.g., EXT. RED PLANET - DAY. A lone astronaut stands on the red, dusty surface. She looks through binoculars at a distant signal.
+
+ELARA
+(Into mic)
+Signal confirmed. I'm moving.
+
+She starts running toward a glowing beacon on the horizon."></textarea>
                     </div>
 
                     <button id="generate-btn" class="w-full bg-indigo-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition transform hover:scale-105">Generate Storyboard</button>
                 </div>
             </div>
 
-            <!-- ... (loading, error, actions containers remain the same) ... -->
             <div id="loading-indicator" class="text-center my-8 hidden"><div class="inline-flex items-center space-x-2"><svg class="animate-spin -ml-1 mr-3 h-8 w-8 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span id="loading-text" class="text-lg font-medium text-gray-400">AI is thinking...</span></div></div>
             <div id="error-message" class="text-center my-8 hidden"><p class="text-red-400 bg-red-900/50 p-4 rounded-lg"></p></div>
-            <div id="actions-container" class="text-center my-8 hidden"><button id="play-animation-btn" class="bg-emerald-500 text-white font-semibold py-3 px-8 rounded-lg hover:bg-emerald-600 transition transform hover:scale-105">▶ Play Animatic</button></div>
+            <div id="actions-container" class="text-center my-8 hidden"><button id="play-animation-btn" class="bg-emerald-500 text-white font-semibold py-3 px-8 rounded-lg hover:bg-emerald-600 transition transform hover:scale-105">▶️ Play Animatic</button></div>
             <div id="storyboard-output" class="mt-12 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"></div>
         </div>
     </div>
 
-    <!-- ... (Animation Player and Modification Modal remain the same) ... -->
     <div id="animation-player" class="hidden fixed inset-0 bg-black/95 flex items-center justify-center z-50"><div class="w-full h-full max-w-6xl max-h-[80vh] bg-black rounded-lg shadow-2xl overflow-hidden relative"><div class="w-full h-full overflow-hidden"><img id="player-image" src="" class="w-full h-full object-cover"/></div><div class="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent"><p id="player-scene-label" class="text-lg font-bold text-indigo-300"></p><p id="player-scene-text" class="text-xl text-gray-200 mt-1"></p></div><div id="progress-bar-container" class="absolute bottom-0 left-0 right-0 h-1.5 bg-white/20"><div id="progress-bar" class="h-full bg-emerald-500"></div></div><button id="close-player-btn" class="absolute top-4 right-4 text-white bg-black/50 rounded-full w-10 h-10 flex items-center justify-center text-2xl hover:bg-white/20 transition">&times;</button></div></div>
+    
     <div id="modification-modal" class="hidden fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4"><div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-full overflow-y-auto p-6 border border-gray-700"><h2 class="text-2xl font-bold text-center gradient-text mb-4">Modify Scene</h2><p id="modal-error" class="text-red-400 text-center mb-2 hidden"></p><div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start"><div class="relative aspect-video bg-gray-900 rounded-lg overflow-hidden"><img id="modal-image" src="" class="w-full h-full object-contain transition-opacity duration-300"/><div id="modal-loader" class="hidden absolute inset-0 bg-black/70 flex items-center justify-center"><svg class="animate-spin h-10 w-10 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg></div></div><div><div class="mb-4"><h3 class="text-lg font-semibold text-gray-300 mb-2">Camera Angle</h3><div class="flex flex-wrap gap-2" id="camera-angle-btns"><button class="control-btn" data-mod="low angle shot">Low Angle</button><button class="control-btn" data-mod="high angle shot">High Angle</button><button class="control-btn" data-mod="wide shot">Wide Shot</button><button class="control-btn" data-mod="extreme close-up">Close-Up</button></div></div><div><h3 class="text-lg font-semibold text-gray-300 mb-2">Lighting</h3><div class="flex flex-wrap gap-2" id="lighting-btns"><button class="control-btn" data-mod="dramatic lighting">Dramatic</button><button class="control-btn" data-mod="soft lighting">Soft</button><button class="control-btn" data-mod="night scene">Night</button><button class="control-btn" data-mod="golden hour">Golden Hour</button></div></div></div></div><div class="mt-6 flex justify-end gap-4"><button id="cancel-modal-btn" class="bg-gray-600 text-white font-semibold py-2 px-6 rounded-lg hover:bg-gray-700 transition">Close</button></div></div></div>
 
 
-    <script src = "script.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
-

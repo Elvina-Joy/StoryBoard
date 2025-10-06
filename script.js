@@ -1,9 +1,9 @@
+
 // --- Element Selectors ---
 const characterInput = document.getElementById('character-input');
 const styleSelector = document.getElementById('style-selector');
 const scriptInput = document.getElementById('script-input');
 const generateBtn = document.getElementById('generate-btn');
-//...(rest of selectors are the same)
 const loadingIndicator = document.getElementById('loading-indicator');
 const storyboardOutput = document.getElementById('storyboard-output');
 const errorMessage = document.getElementById('error-message');
@@ -21,15 +21,18 @@ const modalLoader = document.getElementById('modal-loader');
 const modalError = document.getElementById('modal-error');
 const cancelModalBtn = document.getElementById('cancel-modal-btn');
 
-const API_KEY = ""; // PASTE YOUR KEY HERE FOR LOCAL TESTING
+const API_KEY = "";
 
 // --- State Variables ---
 let conversationHistory = [];
 let storyboardData = [];
 let animationTimeoutId = null;
 let currentlyEditingIndex = -1;
+// New state to track how many scenes the AI thinks there are
+let sceneCount = 0; 
+let currentSceneIndex = 0;
 
-// --- NEW: Helper to get creative direction ---
+// --- Helper to get creative direction ---
 function getCreativeDirection() {
     const characterDescription = characterInput.value.trim();
     const characterPrompt = characterDescription 
@@ -42,30 +45,72 @@ function getCreativeDirection() {
     return { characterPrompt, stylePrompt };
 }
 
-// --- Core Functions (Updated) ---
+// --- Core Functions (AI-Driven Scene Breakdown) ---
 async function handleGenerateStoryboard() {
     const fullScript = scriptInput.value.trim();
     if (!fullScript) { return displayError("Please enter a script first."); }
     
     // Reset UI and state
-    Object.assign(generateBtn, { disabled: true, textContent: 'Generating...' });
+    Object.assign(generateBtn, { disabled: true, textContent: 'Analyzing Script...' });
     storyboardOutput.innerHTML = '';
     actionsContainer.classList.add('hidden');
     loadingIndicator.classList.remove('hidden');
     errorMessage.classList.add('hidden');
     conversationHistory = [];
     storyboardData = [];
+    sceneCount = 0;
+    currentSceneIndex = 0;
     
     const { characterPrompt, stylePrompt } = getCreativeDirection();
 
-    const sceneCount = 5;
     try {
-        const initialPrompt = `You are a storyboard artist AI. Your task is to generate a visual storyboard based on the script below, following my creative direction precisely. I will prompt you for each scene sequentially. ${characterPrompt}${stylePrompt}Here is the full script:\n\n---\n${fullScript}\n---\n\nFirst, provide the action text for Scene 1 and then generate the image for Scene 1.`;
-        conversationHistory.push({ role: "user", parts: [{ text: initialPrompt }] });
+        // STEP 1: Get the AI to decide on the scenes and set the count.
+        document.getElementById('loading-text').textContent = 'Asking AI to determine scene breaks...';
+
+        const initialPrompt = `You are a storyboard artist AI. Your task is to analyze the script below, divide it into the minimum number of distinct visual scenes (shots) that capture the key action, and then generate those scenes sequentially. Use your best judgment to define the scenes. Limit the total number of scenes to a maximum of 15 to ensure a good visual flow.
+
+**CRITICAL RULE: For your first response, you must ONLY provide a number between 1 and 15 representing the total number of scenes you have broken the script into. DO NOT include the image or any other text yet. For example, if you decide on 5 scenes, your entire response should be: 5**
+
+${characterPrompt}${stylePrompt}
+
+Here is the full script:\n\n---\n${fullScript}\n---`;
         
+        // --- FIRST API CALL: Determine Scene Count ---
+        let response = await sendTextOnlyPrompt(initialPrompt);
+        
+        if (response.error) throw new Error(response.message);
+
+        // Attempt to parse the scene count from the response text
+        const sceneCountMatch = response.text.match(/\d+/);
+        sceneCount = sceneCountMatch ? parseInt(sceneCountMatch[0]) : 5; // Default to 5 if parsing fails
+        sceneCount = Math.min(sceneCount, 15); // Ensure a hard limit just in case
+
+        if (sceneCount < 1) sceneCount = 1;
+
+        console.log(`AI decided on ${sceneCount} scenes.`);
+
+        // --- SECOND API CALL (and loop): Generate Scene 1 and subsequent scenes ---
+        
+        // Update history with the AI's scene count response to maintain context
+        conversationHistory.push({ role: "user", parts: [{ text: initialPrompt }] });
+        conversationHistory.push({ role: "model", parts: [{ text: String(sceneCount) }] });
+
         for (let i = 1; i <= sceneCount; i++) {
+            currentSceneIndex = i;
             document.getElementById('loading-text').textContent = `Generating Scene ${i} of ${sceneCount}...`;
-            const panelData = await generatePanel(null); 
+            
+            let sceneGenerationPrompt;
+            if (i === 1) {
+                // Initial generation prompt
+                sceneGenerationPrompt = `Now that you have confirmed the total scenes is ${sceneCount}, please provide the action text and generate the image for **Scene 1**.`;
+            } else {
+                // Follow-up prompt
+                sceneGenerationPrompt = `Excellent. Now please provide the action text and generate the image for **Scene ${i}**. Focus on the next part of the overall script to ensure a progressive narrative.`;
+            }
+
+            conversationHistory.push({ role: "user", parts: [{ text: sceneGenerationPrompt }] });
+            
+            const panelData = await generatePanel(null); // Passing null tells generatePanel to use history
             
             if (panelData.error) {
                 const placeholderImg = `https://placehold.co/1280x720/1f2937/4b5563?text=Image+Failed`;
@@ -76,22 +121,43 @@ async function handleGenerateStoryboard() {
                 storyboardData.push({ ...panelData, originalPrompt: panelData.text });
                 createStoryboardPanel(panelData.imageUrl, panelData.text, i - 1);
             }
-
-            if (i < sceneCount) {
-                const followupPrompt = `Excellent. Using the original script and adhering to the character and style rules, please now provide the action text and generate the image for Scene ${i + 1}.`;
-                conversationHistory.push({ role: "user", parts: [{ text: followupPrompt }] });
-            }
         }
         actionsContainer.classList.remove('hidden');
+
     } catch (error) {
         console.error('Storyboard Generation Error:', error);
-        displayError(error.message || 'An unknown error occurred.');
+        displayError(error.message || 'An unknown error occurred during the process.');
     } finally {
         loadingIndicator.classList.add('hidden');
         Object.assign(generateBtn, { disabled: false, textContent: 'Generate Storyboard' });
     }
 }
 
+// Helper to send a text-only prompt (used for getting the scene count)
+async function sendTextOnlyPrompt(prompt) {
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+    const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+    
+    try {
+        const response = await fetchWithRetry(apiUrl, { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify(payload) 
+        });
+        const result = await response.json();
+        const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (!text) {
+            return { error: true, message: 'AI failed to determine scene count.' };
+        }
+        return { error: false, text: text.trim() };
+    } catch (error) {
+        console.error("Text-only prompt failed:", error);
+        return { error: true, message: `Text prompt error: ${error.message}` };
+    }
+}
+
+// --- Unchanged Functions (except for using conversationHistory implicitly) ---
 async function handleModification(modification) {
     if (currentlyEditingIndex === -1) return;
 
@@ -127,27 +193,57 @@ async function handleModification(modification) {
     }
 }
 
-// --- Unchanged Functions (generatePanel, createStoryboardPanel, etc.) ---
 async function generatePanel(prompt, baseImage = null) {
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${API_KEY}`;
     let requestContents;
+    
     if (baseImage) {
+        // Modification uses explicit prompt and base image
         const base64Data = baseImage.split(',')[1];
         requestContents = [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType: 'image/png', data: base64Data } }] }];
-    } else { requestContents = conversationHistory; }
+    } else { 
+        // Scene generation uses the entire conversation history
+        requestContents = conversationHistory; 
+    }
+    
     const payload = { contents: requestContents, generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } };
-    const response = await fetchWithRetry(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    
+    const response = await fetchWithRetry(apiUrl, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(payload) 
+    });
+    
     const result = await response.json();
     const candidate = result.candidates?.[0];
-    if (!candidate || !candidate.content || !candidate.content.parts) { return { error: true, message: 'The AI response was empty, invalid, or blocked.' }; }
-    if (!baseImage) { conversationHistory.push(candidate.content); }
+    
+    if (!candidate || !candidate.content || !candidate.content.parts) { 
+        return { error: true, message: 'The AI response was empty, invalid, or blocked.' }; 
+    }
+    
+    if (!baseImage) { 
+        // If this is a new scene, add the model's response (image and text) to history
+        conversationHistory.push(candidate.content); 
+    }
+    
     const parts = candidate.content.parts;
     const textPart = parts.find(p => p.text);
     const imagePart = parts.find(p => p.inlineData);
-    if (!imagePart) { const refusalText = textPart?.text || 'The model refused to generate an image.'; return { error: true, message: refusalText }; }
+    
+    if (!imagePart) { 
+        const refusalText = textPart?.text || 'The model refused to generate an image.'; 
+        return { error: true, message: refusalText }; 
+    }
+    
     const sceneText = textPart?.text || storyboardData[currentlyEditingIndex]?.originalPrompt || "Description not provided.";
-    return { error: false, text: sceneText, imageUrl: `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}` };
+    
+    return { 
+        error: false, 
+        text: sceneText, 
+        imageUrl: `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}` 
+    };
 }
+
 function createStoryboardPanel(imageUrl, text, index, isError = false) {
     const panel = document.createElement('div');
     panel.id = `panel-${index}`;
@@ -169,29 +265,61 @@ function createStoryboardPanel(imageUrl, text, index, isError = false) {
     panel.appendChild(textContainer);
     storyboardOutput.appendChild(panel);
 }
+
 function openModificationModal(index) {
     currentlyEditingIndex = index;
     modalImage.src = storyboardData[index].imageUrl;
     modificationModal.classList.remove('hidden');
     modalError.classList.add('hidden');
 }
+
 function startAnimation() { animationPlayer.classList.remove('hidden'); playScene(0); }
-function stopAnimation() { animationPlayer.classList.add('hidden'); if (animationTimeoutId) clearTimeout(animationTimeoutId); animationTimeoutId = null; }
+
+function stopAnimation() { 
+    animationPlayer.classList.add('hidden'); 
+    if (animationTimeoutId) clearTimeout(animationTimeoutId); 
+    animationTimeoutId = null; 
+}
+
 function playScene(index) {
     const playableScenes = storyboardData.filter(s => !s.error);
     if (index >= playableScenes.length) { return stopAnimation(); }
     const panel = playableScenes[index];
+    
+    // Reset and set image and text
     playerImage.src = panel.imageUrl;
     playerSceneLabel.textContent = `SHOT ${storyboardData.indexOf(panel) + 1}`;
     playerSceneText.textContent = panel.originalPrompt;
+    
+    // Apply Ken Burns effect
     const animationClasses = ['animate-zoom-in', 'animate-pan-right', 'animate-pan-left', 'animate-pan-down'];
     const randomAnimation = animationClasses[Math.floor(Math.random() * animationClasses.length)];
     playerImage.className = `w-full h-full object-cover player-image-transition ${randomAnimation}`;
+    
+    // Reset and start progress bar
     progressBar.className = 'h-full bg-emerald-500 progress-bar-animate';
+    
+    // Set timeout for next scene
     animationTimeoutId = setTimeout(() => playScene(index + 1), 5000);
 }
-function displayError(message) { errorMessage.querySelector('p').textContent = message; errorMessage.classList.remove('hidden'); }
-async function fetchWithRetry(url, options, retries = 3, delay = 1000) { for (let i = 0; i < retries; i++) { try { const response = await fetch(url, options); if (!response.ok) throw new Error(`API request failed: ${response.status}`); return response; } catch (error) { if (i === retries - 1) throw error; await new Promise(res => setTimeout(res, delay * 2 ** i)); } } }
+
+function displayError(message) { 
+    errorMessage.querySelector('p').textContent = message; 
+    errorMessage.classList.remove('hidden'); 
+}
+
+async function fetchWithRetry(url, options, retries = 3, delay = 1000) { 
+    for (let i = 0; i < retries; i++) { 
+        try { 
+            const response = await fetch(url, options); 
+            if (!response.ok) throw new Error(`API request failed: ${response.status}`); 
+            return response; 
+        } catch (error) { 
+            if (i === retries - 1) throw error; 
+            await new Promise(res => setTimeout(res, delay * 2 ** i)); 
+        } 
+    } 
+}
 
 // --- Event Listeners ---
 generateBtn.addEventListener('click', handleGenerateStoryboard);
